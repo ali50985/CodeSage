@@ -1,4 +1,16 @@
 import streamlit as st
+import ast
+import replicate
+
+from dotenv import load_dotenv
+import os
+
+# Load the .env file
+load_dotenv()  
+
+# Fetch the API key
+REPLICATE_API_TOKEN = os.getenv("REPLICATE_API_TOKEN")
+
 
 # Initialize session_state
 if 'current_page' not in st.session_state:
@@ -8,18 +20,45 @@ if 'current_page' not in st.session_state:
 def navigate(page_name):
     st.session_state.current_page = page_name
 
-#Function for  dummy debugging
-def dummy_debug(code,language):
-    if not code.strip():
-        return "no code provided"
-    if language in ["C++", "Java", "JavaScript", "C#", "Go", "PHP"]:
-        if ";" not in code:
-            return "Warning: Missing semicolons may cause syntax errors."
-    elif language == "Python":
-        if ":" not in code:
-            return "Warning: Python blocks usually end with ':'. Please check indentation."
+#Ast function for python
+def analyse_python_code(code):
+    try:
+        tree = ast.parse(code)
+        return "✅ No syntax errors found!", "success"
+    except SyntaxError as e:
+        error_msg = f"❌ Syntax Error on line {e.lineno}: {e.msg}"
+        return error_msg,"error"
     
-    return "No major errors detected. Code looks good!"
+def fix_code_with_ai(code, language="Python"):
+    """Uses AI to explain and fix bugs in code"""
+    try:
+        prompt = f"""
+        [INST] <<SYS>>
+        You are a {language} coding expert. Follow these steps:
+        1. Identify all bugs in this code
+        2. Explain each bug in simple terms
+        3. Show the corrected code
+        4. Add brief improvement suggestions
+        <</SYS>>
+
+        Code to debug:
+        ```{language.lower()}
+        {code}
+        ```
+        [/INST]
+        """
+
+        output = replicate.run(
+             "meta/llama-2-7b-chat:13c3cdee13ee059ab779f0291d29054dab00a47dad8261375654de5540165fb0",
+            input={
+                "prompt": prompt,
+                "max_tokens": 300,
+                "temperature": 0.3  # Lower = more precise fixes
+            }
+        )
+        return "".join(output)
+    except Exception as e:
+        return f"⚠️ AI Debugging Failed: {str(e)}"
 
 
 with st.sidebar:
@@ -103,16 +142,24 @@ elif st.session_state.current_page == "Debug Code":
         ("Python", "C++", "Java", "JavaScript", "C#", "Go", "Ruby", "PHP")
     )
     code_input = st.text_area(f"Paste your {language} code here", height=300)
-    if code_input:
-        st.subheader("Analysis Result")
+    #if code_input:
+        #st.subheader("Analysis Result")
         #st.info("AI Debugging feature coming soon...")
     if st.button("Debug Code"):
-        result = dummy_debug(code_input,language)
-        st.success("debugging successfully completed")
-        #st.balloons()
-        
-        st.info(result)
-
+        st.subheader("Analysis Result")
+        if code_input.strip == "":
+            st.warning("Please paste some code before debugging!")
+        else:
+            with st.spinner("Analyzing code..."):
+                # Basic syntax check
+                if language == "Python":
+                    analysis_msg, _ = analyse_python_code(code_input)
+                    st.text(analysis_msg)
+                
+                # AI Debugging
+                st.subheader("AI Debugging Results")
+                ai_response = fix_code_with_ai(code_input, language)
+                st.text(ai_response)
 
 # About App Page
 elif st.session_state.current_page == "About App":
